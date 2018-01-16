@@ -1,0 +1,120 @@
+#user  nobody;
+user root;
+worker_processes 24;
+worker_rlimit_nofile 204800;
+
+worker_cpu_affinity
+000000000000000000000001
+000000000000000000000010
+000000000000000000000100
+000000000000000000001000
+000000000000000000010000
+000000000000000000100000
+000000000000000001000000
+000000000000000010000000
+000000000000000100000000
+000000000000001000000000
+000000000000010000000000
+000000000000100000000000
+000000000001000000000000
+000000000010000000000000
+000000000100000000000000
+000000001000000000000000
+000000010000000000000000
+000000100000000000000000
+000001000000000000000000
+000010000000000000000000
+000100000000000000000000
+001000000000000000000000
+010000000000000000000000
+100000000000000000000000
+;
+
+error_log   logs/error.log;
+
+worker_rlimit_core 102400m;
+working_directory logs/;
+
+pid             logs/nginx.pid;
+events {
+	use epoll;
+	accept_mutex off;
+	worker_connections 65535;
+}
+
+
+
+http {
+    include       mime.types;
+    default_type  application/octet-stream;
+
+    lua_package_path "/opt/data-qkpack-ngluaproxy/lualib/?.lua;/opt/data-qkpack-ngluaproxy/nginx/?.lua;";
+    lua_package_cpath "/opt/data-qkpack-ngluaproxy/lualib/?.so;/opt/data-qkpack-ngluaproxy/nginx/lib/?.so;";
+
+	log_format  main  '$time_local'
+                        '       $request_uri'
+                        '       $status'
+                        '       $bytes_sent'
+                        '       $request_time'
+                        '       $upstream_response_time'
+                        '       $host'
+                        '       $remote_addr'
+                        '       $server_addr'
+                        '       $upstream_addr'
+                        '       $http_referer'
+                        '       $http_user_agent'
+                        '       $http_X_Forwarded_For'
+                        '       $http_connection'
+                        '       $sent_http_connection'
+                        '       $sent_http_keep_alive';
+
+    #access_log  logs/access.log  main;
+    access_log off;
+
+    sendfile        on;
+    tcp_nopush     	on;
+    tcp_nodelay     on;
+	
+    server_tokens off;
+    reset_timedout_connection on;
+    proxy_ignore_client_abort on;
+
+    keepalive_timeout 600;
+    keepalive_requests 10000000;
+
+    client_max_body_size 30m;
+    client_header_buffer_size 2048k;
+    large_client_header_buffers 4 2048k;
+    client_body_buffer_size 2048k;
+    	
+    server {
+        listen       8015 backlog=204800;
+        server_name  localhost;
+
+
+		location ~* "^/hdp/kvstore/" {
+			rewrite ^/hdp/kvstore/kv/(.*)/sub    /hdp/kvstore/kv/$1 break;
+			rewrite ^/hdp/kvstore/zfixedset/(.*)/sub  /hdp/kvstore/zfixedset/$1 break;
+
+			error_log   logs/qkpack.log;
+			#access_log  logs/access.log  main;
+			
+			content_by_lua_file /opt/data-qkpack-ngluaproxy/nginx/resty/qkpack_service.lua;
+		}
+
+		location =/hdp/kvstore/zfixedset/batchadd {
+			error_log   logs/qkpack_proxy.log;
+			#access_log  logs/access_proxy.log  main;
+			
+			content_by_lua_file /opt/data-qkpack-ngluaproxy/nginx/resty/qkpack_split.lua;
+		}
+
+		location =/hdp/kvstore/kv/mset {
+			error_log   logs/qkpack_proxy.log;
+			#access_log  logs/access_proxy.log  main;
+
+			content_by_lua_file /opt/data-qkpack-ngluaproxy/nginx/resty/qkpack_split.lua;
+		}
+	
+    }
+}
