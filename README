@@ -1,1 +1,3 @@
+# 支持redis cluster
+
 ./configure --prefix=/opt/data-qkpack-ngproxy --with-pcre-jit --with-http_stub_status_module
